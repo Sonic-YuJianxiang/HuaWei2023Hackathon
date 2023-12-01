@@ -6,8 +6,8 @@ import os
 import math
 
 for file in os.listdir('testcases'):
-    # filename = 'testcases/'+file
-    filename = "toy_example_final.txt"
+    filename = 'testcases/'+file
+    # filename = "toy_example_final.txt"
 
 
     # read file
@@ -39,84 +39,253 @@ for file in os.listdir('testcases'):
 
     
     # schedule
+    time_state = [[0 for _ in range(3)] for _ in range(slices_num)]
+    prev_state = [None for _ in range(slices_num)]
 
     start = time.time()
     for t in range(time_horizon):
         cnt_cpu, cnt_mem, cnt_acc = 0, 0, 0
-        for s in range(slices_num):
-            cpu_tmp = slice_info[s][0][0] + slice_info[s][1][0] + slice_info[s][2][0]
-            mem_tmp = slice_info[s][0][1] + slice_info[s][1][1] + slice_info[s][2][1]
-            acc_tmp = slice_info[s][0][2] + slice_info[s][1][2] + slice_info[s][2][2]
+        if t == 0:
+            for s in range(slices_num):
+                cpu_tmp = slice_info[s][0][0] + slice_info[s][1][0] + slice_info[s][2][0]
+                mem_tmp = slice_info[s][0][1] + slice_info[s][1][1] + slice_info[s][2][1]
+                acc_tmp = slice_info[s][0][2] + slice_info[s][1][2] + slice_info[s][2][2]
 
-            feasible = False
-            if not feasible:
-                cnt_cpu += slice_info[s][-1][t] * cpu_tmp
-                cnt_mem += slice_info[s][-1][t] * mem_tmp
-                cnt_acc += slice_info[s][-1][t] * acc_tmp
+                feasible = False
+                if not feasible:
+                    cnt_cpu += slice_info[s][-1][t] * cpu_tmp
+                    cnt_mem += slice_info[s][-1][t] * mem_tmp
+                    cnt_acc += slice_info[s][-1][t] * acc_tmp
 
-                bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
-                if bbu_num > bbu_b:
-                    cnt_cpu -= slice_info[s][-1][t] * cpu_tmp
-                    cnt_mem -= slice_info[s][-1][t] * mem_tmp
-                    cnt_acc -= slice_info[s][-1][t] * acc_tmp
-                else:
+                    bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
+                    if bbu_num > bbu_b:
+                        cnt_cpu -= slice_info[s][-1][t] * cpu_tmp
+                        cnt_mem -= slice_info[s][-1][t] * mem_tmp
+                        cnt_acc -= slice_info[s][-1][t] * acc_tmp
+                    else:
+                        feasible = True
+                        strategy[s][t] = 0
+                        prev_state[s] = 0
+                        io_cost_arr[t] += slice_info[s][-1][t] * slice_info[s][-2][0]
+
+                if not feasible:
+                    tmp1 = cpu_tmp - slice_info[s][0][0]
+                    tmp2 = mem_tmp - slice_info[s][0][1]
+                    tmp3 = acc_tmp - slice_info[s][0][2]
+
+                    cnt_cpu += slice_info[s][4][t] * tmp1
+                    cnt_mem += slice_info[s][4][t] * tmp2
+                    cnt_acc += slice_info[s][4][t] * tmp3
+
+                    bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
+                    if bbu_num > bbu_b:
+                        cnt_cpu -= slice_info[s][4][t] * tmp1
+                        cnt_mem -= slice_info[s][4][t] * tmp2
+                        cnt_acc -= slice_info[s][4][t] * tmp3
+                    else:
+                        feasible = True
+                        strategy[s][t] = 1
+                        prev_state[s] = 1
+                        io_cost_arr[t] += slice_info[s][4][t] * slice_info[s][3][1]
+                        cloud_cost_arr[t] += ((cpu_tmp-tmp1) + (acc_tmp-tmp3) * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][4][t] + (mem_tmp-tmp2) * cloud_mem_cost * slice_info[s][4][t]
+
+                if not feasible:
+                    tmp1 = slice_info[s][2][0]
+                    tmp2 = slice_info[s][2][1]
+                    tmp3 = slice_info[s][2][2]
+
+                    cnt_cpu += slice_info[s][4][t] * tmp1
+                    cnt_mem += slice_info[s][4][t] * tmp2
+                    cnt_acc += slice_info[s][4][t] * tmp3
+
+                    bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
+                    if bbu_num > bbu_b:
+                        cnt_cpu -= slice_info[s][4][t] * tmp1
+                        cnt_mem -= slice_info[s][4][t] * tmp2
+                        cnt_acc -= slice_info[s][4][t] * tmp3
+                    else:
+                        feasible = True
+                        strategy[s][t] = 2
+                        prev_state[s] = 2
+                        io_cost_arr[t] += slice_info[s][4][t] * slice_info[s][3][2]
+                        cloud_cost_arr[t] += ((cpu_tmp-tmp1) + (acc_tmp-tmp3) * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][4][t] + (mem_tmp-tmp2) * cloud_mem_cost * slice_info[s][4][t]
+
+
+                if not feasible:
+                    strategy[s][t] = 3
+                    prev_state[s] = 3
+                    io_cost_arr[t] += slice_info[s][-1][t] * slice_info[s][-2][-1]
+                    cloud_cost_arr[t] += (cpu_tmp + acc_tmp * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][-1][t] + mem_tmp * cloud_mem_cost * slice_info[s][-1][t]
                     feasible = True
-                    strategy[s][t] = 0
-                    io_cost_arr[t] += slice_info[s][-1][t] * slice_info[s][-2][0]
+        else:
+            for s in range(slices_num):
+                cpu_tmp = slice_info[s][0][0] + slice_info[s][1][0] + slice_info[s][2][0]
+                mem_tmp = slice_info[s][0][1] + slice_info[s][1][1] + slice_info[s][2][1]
+                acc_tmp = slice_info[s][0][2] + slice_info[s][1][2] + slice_info[s][2][2]
 
-            if not feasible:
-                tmp1 = cpu_tmp - slice_info[s][0][0]
-                tmp2 = mem_tmp - slice_info[s][0][1]
-                tmp3 = acc_tmp - slice_info[s][0][2]
+                feasible = False
+                if not feasible:
+                    time_state_changeble = False
+                    if prev_state[s] == 0:
+                        time_state_changeble = True
+                    elif prev_state[s] == 1:
+                        time_state_changeble = time_state[s][0] == 0
+                    elif prev_state[s] == 2:
+                        time_state_changeble = time_state[s][0] == 0 and time_state[s][1] == 0
+                    elif prev_state[s] == 3:
+                        time_state_changeble = time_state[s][0] == 0 and time_state[s][1] == 0 and time_state[s][2] == 0
 
-                cnt_cpu += slice_info[s][4][t] * tmp1
-                cnt_mem += slice_info[s][4][t] * tmp2
-                cnt_acc += slice_info[s][4][t] * tmp3
+                    if time_state_changeble:
+                        cnt_cpu += slice_info[s][-1][t] * cpu_tmp
+                        cnt_mem += slice_info[s][-1][t] * mem_tmp
+                        cnt_acc += slice_info[s][-1][t] * acc_tmp
 
-                bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
-                if bbu_num > bbu_b:
-                    cnt_cpu -= slice_info[s][4][t] * tmp1
-                    cnt_mem -= slice_info[s][4][t] * tmp2
-                    cnt_acc -= slice_info[s][4][t] * tmp3
-                else:
-                    feasible = True
-                    strategy[s][t] = 1
-                    io_cost_arr[t] += slice_info[s][4][t] * slice_info[s][3][1]
-                    cloud_cost_arr[t] += ((cpu_tmp-tmp1) + (acc_tmp-tmp3) * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][4][t] + (mem_tmp-tmp2) * cloud_mem_cost * slice_info[s][4][t]
+                        bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
+                        if bbu_num > bbu_b:
+                            cnt_cpu -= slice_info[s][-1][t] * cpu_tmp
+                            cnt_mem -= slice_info[s][-1][t] * mem_tmp
+                            cnt_acc -= slice_info[s][-1][t] * acc_tmp
+                        else:
+                            feasible = True
+                            strategy[s][t] = 0
 
-            if not feasible:
-                tmp1 = slice_info[s][2][0]
-                tmp2 = slice_info[s][2][1]
-                tmp3 = slice_info[s][2][2]
+                            if prev_state[s] == 0:
+                                time_state[s] = [max(0, time_state[s][0]-1),max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 1:
+                                time_state[s] = [frozen_period, max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 2:
+                                time_state[s] = [frozen_period, frozen_period, max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 3:
+                                time_state[s] = [frozen_period, frozen_period, frozen_period]
 
-                cnt_cpu += slice_info[s][4][t] * tmp1
-                cnt_mem += slice_info[s][4][t] * tmp2
-                cnt_acc += slice_info[s][4][t] * tmp3
+                            prev_state[s] = 0
+                            io_cost_arr[t] += slice_info[s][-1][t] * slice_info[s][-2][0]
 
-                bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
-                if bbu_num > bbu_b:
-                    cnt_cpu -= slice_info[s][4][t] * tmp1
-                    cnt_mem -= slice_info[s][4][t] * tmp2
-                    cnt_acc -= slice_info[s][4][t] * tmp3
-                else:
-                    feasible = True
-                    strategy[s][t] = 2
-                    io_cost_arr[t] += slice_info[s][4][t] * slice_info[s][3][2]
-                    cloud_cost_arr[t] += ((cpu_tmp-tmp1) + (acc_tmp-tmp3) * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][4][t] + (mem_tmp-tmp2) * cloud_mem_cost * slice_info[s][4][t]
+                if not feasible:
+
+                    time_state_changeble = False
+                    if prev_state[s] == 0:
+                        time_state_changeble = time_state[s][0] == 0
+                    elif prev_state[s] == 1:
+                        time_state_changeble = True
+                    elif prev_state[s] == 2:
+                        time_state_changeble = time_state[s][1] == 0
+                    elif prev_state[s] == 3:
+                        time_state_changeble = time_state[s][1] == 0 and time_state[s][2] == 0
+
+                    if time_state_changeble:
+                        tmp1 = cpu_tmp - slice_info[s][0][0]
+                        tmp2 = mem_tmp - slice_info[s][0][1]
+                        tmp3 = acc_tmp - slice_info[s][0][2]
+
+                        cnt_cpu += slice_info[s][4][t] * tmp1
+                        cnt_mem += slice_info[s][4][t] * tmp2
+                        cnt_acc += slice_info[s][4][t] * tmp3
+
+                        bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
+                        if bbu_num > bbu_b:
+                            cnt_cpu -= slice_info[s][4][t] * tmp1
+                            cnt_mem -= slice_info[s][4][t] * tmp2
+                            cnt_acc -= slice_info[s][4][t] * tmp3
+                        else:
+                            feasible = True
+                            strategy[s][t] = 1
+
+                            if prev_state[s] == 0:
+                                time_state[s] = [frozen_period, max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 1:
+                                time_state[s] = [max(0, time_state[s][0]-1),max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 2:
+                                time_state[s] = [max(0, time_state[s][0]-1), frozen_period, max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 3:
+                                time_state[s] = [frozen_period, max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
+
+
+                            prev_state[s] = 1
+                            io_cost_arr[t] += slice_info[s][4][t] * slice_info[s][3][1]
+                            cloud_cost_arr[t] += ((cpu_tmp-tmp1) + (acc_tmp-tmp3) * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][4][t] + (mem_tmp-tmp2) * cloud_mem_cost * slice_info[s][4][t]
+
+                if not feasible:
+                    time_state_changeble = False
+                    if prev_state[s] == 0:
+                        time_state_changeble = time_state[s][0] == 0 and time_state[s][1] == 0
+                    elif prev_state[s] == 1:
+                        time_state_changeble = time_state[s][1] == 0
+                    elif prev_state[s] == 2:
+                        time_state_changeble = True
+                    elif prev_state[s] == 3:
+                        time_state_changeble = time_state[s][2] == 0
+
+
+                    if time_state_changeble:
+                        tmp1 = slice_info[s][2][0]
+                        tmp2 = slice_info[s][2][1]
+                        tmp3 = slice_info[s][2][2]
+
+                        cnt_cpu += slice_info[s][4][t] * tmp1
+                        cnt_mem += slice_info[s][4][t] * tmp2
+                        cnt_acc += slice_info[s][4][t] * tmp3
+
+                        bbu_num = max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc)
+                        if bbu_num > bbu_b:
+                            cnt_cpu -= slice_info[s][4][t] * tmp1
+                            cnt_mem -= slice_info[s][4][t] * tmp2
+                            cnt_acc -= slice_info[s][4][t] * tmp3
+                        else:
+                            feasible = True
+                            strategy[s][t] = 2
+
+                            if prev_state[s] == 0:
+                                time_state[s] = [frozen_period, frozen_period, max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 1:
+                                time_state[s] = [max(0, time_state[s][0]-1),frozen_period, max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 2:
+                                time_state[s] = [max(0, time_state[s][0]-1), max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
+                            elif prev_state[s] == 3:
+                                time_state[s] = [max(0, time_state[s][0]-1), max(0, time_state[s][1]-1), frozen_period]
+
+
+                            prev_state[s] = 2
+                            io_cost_arr[t] += slice_info[s][4][t] * slice_info[s][3][2]
+                            cloud_cost_arr[t] += ((cpu_tmp-tmp1) + (acc_tmp-tmp3) * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][4][t] + (mem_tmp-tmp2) * cloud_mem_cost * slice_info[s][4][t]
+
+
+                if not feasible:
+                    time_state_changeble = False
+                    if prev_state[s] == 0:
+                        time_state_changeble = time_state[s][0] == 0 and time_state[s][1] == 0 and time_state[s][2] == 0
+                    elif prev_state[s] == 1:
+                        time_state_changeble = time_state[s][1] == 0 and time_state[s][2] == 0
+                    elif prev_state[s] == 2:
+                        time_state_changeble = time_state[s][2] == 0
+                    elif prev_state[s] == 3:
+                        time_state_changeble = True
+
+                    if time_state_changeble:
+                        strategy[s][t] = 3
+
+                        if prev_state[s] == 0:
+                            time_state[s] = [frozen_period, frozen_period, frozen_period]
+                        elif prev_state[s] == 1:
+                            time_state[s] = [max(0, time_state[s][0]-1),frozen_period, frozen_period]
+                        elif prev_state[s] == 2:
+                            time_state[s] = [max(0, time_state[s][0]-1), max(0, time_state[s][1]-1), frozen_period]
+                        elif prev_state[s] == 3:
+                            time_state[s] = [max(0, time_state[s][0]-1), max(0, time_state[s][1]-1), max(0, time_state[s][2]-1)]
 
 
 
-            if not feasible:
-                strategy[s][t] = 3
-                io_cost_arr[t] += slice_info[s][-1][t] * slice_info[s][-2][-1]
-                cloud_cost_arr[t] += (cpu_tmp + acc_tmp * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][-1][t] + mem_tmp * cloud_mem_cost * slice_info[s][-1][t]
-                feasible = True
+                        prev_state[s] = 3
+                        io_cost_arr[t] += slice_info[s][-1][t] * slice_info[s][-2][-1]
+                        cloud_cost_arr[t] += (cpu_tmp + acc_tmp * cpu_acc_ratio) * cloud_cpu_cost * slice_info[s][-1][t] + mem_tmp * cloud_mem_cost * slice_info[s][-1][t]
+                        feasible = True
+
 
         bbu_num = math.ceil(max(max(cnt_cpu / bbu_cpu, cnt_mem / bbu_mem), cnt_acc / bbu_acc))
 
-        if bbu_num > bbu_b:
-            print("-------------------Invalid solution-------------------")
-            break
+        if bbu_num > bbu_b or not feasible:
+            print("-------------------Invalid solution-------------------", t, s)
+            continue
 
         bbu_cost_arr[t] = bbu_num * bbu_cost
 
@@ -132,12 +301,11 @@ for file in os.listdir('testcases'):
 
     end = time.time()
 
-    print(cloud_cost_arr)
-    print(bbu_cost_arr)
-    print(io_cost_arr)
+    # print(cloud_cost_arr)
+    # print(bbu_cost_arr)
+    # print(io_cost_arr)
     # print(cnt_cpu, cnt_mem, cnt_acc)
-    print(strategy)
-
+    # print(strategy)
 
     # write file
     file_id = file.split('.')[0].split('e')[-1]
